@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import re
 
-# TODO: implement normal, applicative and lazy order reduciton.
+# TODO: finish lazy order reduciton.
 
 class LambdaTerm:
     """Abstract Base Class for lambda terms."""
@@ -16,6 +16,9 @@ class LambdaTerm:
 
         return Application(self, other)
 
+    def __eq__(self, other):
+        return isinstance(other, LambdaTerm)
+
     def __str__(self):
         return self.to_string()
 
@@ -24,6 +27,13 @@ class LambdaTerm:
 
     def is_empty(self):
         return False
+
+    def get_alias(self):
+        """Returns corresponding alias to lambda term. If none exists, return
+        None."""
+        for key, value in aliases:
+            if self == value:
+                return key
 
     def deep_add(self, other, depth):
         if not isinstance(other, LambdaTerm):
@@ -56,7 +66,7 @@ class LambdaTerm:
     def lazy_reduce(self):
         raise NotImplementedError
 
-    def to_string(self, var=[], parens=False):
+    def to_string(self, var=[], parens=False, use_aliases=True):
         """Returns string representation of lambda term. Var is list of
         variable names to use and parens determines whether or not to return
         string with parens."""
@@ -64,9 +74,11 @@ class LambdaTerm:
 
 
 class EmptyTerm(LambdaTerm):
-    """Represents an empty lambda term. This is not really a thing in lambda
-    calculus but I use it to be able to create Abstractions and Applications
-    with empty bodies/arguments/functions."""
+    """Represents an empty lambda term. Mainly used in creating lambda terms
+    from string."""
+
+    def __eq__(self, other):
+        return other.is_empty()
 
     def __repr__(self):
         return "Empty"
@@ -86,7 +98,7 @@ class EmptyTerm(LambdaTerm):
     def lazy_reduce(self):
         return (False, self)
 
-    def to_string(self, var=[], parens=False):
+    def to_string(self, var=[], parens=False, use_aliases=True):
         return ""
 
 
@@ -150,7 +162,7 @@ class Variable(LambdaTerm):
     def lazy_reduce(self):
         return (False, self) # Variables can no longer be beta reduced.
 
-    def to_string(self, var=[], parens=False):
+    def to_string(self, var=[], parens=False, use_aliases=True):
         """Returns string representation of a variable."""
         if self.bound:
             index = len(var) - self.pos - 1
@@ -171,6 +183,9 @@ class Abstraction(LambdaTerm):
             raise ValueError("Expected lambda term.")
 
         self.body = body
+
+    def __eq__(self, other):
+        return (isinstance(other, Abstraction) and self.body == other.body)
 
     def __repr__(self):
         return "Abstraction(%s)" % repr((self.body))
@@ -225,18 +240,23 @@ class Abstraction(LambdaTerm):
 
         return (False, self)
 
-    def to_string(self, var=[], parens=False, curried=False):
+    def to_string(self, var=[], parens=False, use_aliases=True, curried=False):
         """Returns string representation of lambda abstraction.
         E.g.: λ x0 x1.x0 """
+        alias = self.get_alias()
+        if alias:
+            return alias
+
         symbol = ("x%d") % (len(var)) # Creates new variable name.
         x = Variable(symbol)
         first = x if curried else "%s%s" % (LAMBDA, x)
 
         # Check if body is lambda abstraction.
         if isinstance(self.body, Abstraction):
-            second =  " %s" % (self.body.to_string(var + [x], curried=True))
+            second =  " %s" % (self.body.to_string(var + [x], False,
+                                                   use_aliases, curried=True))
         else:
-            second = ".%s" % (self.body.to_string(var + [x]))
+            second = ".%s" % (self.body.to_string(var + [x], False, use_aliases))
 
         if parens:
             return "(%s%s)" % (first, second)
@@ -357,19 +377,24 @@ class Application(LambdaTerm):
 
         return (False, self)
 
-    def to_string(self, var=[], parens=False):
+    def to_string(self, var=[], parens=False, use_aliases=True):
         """Returns string representation of lambda term."""
+        alias = self.get_alias()
+        if alias:
+            return alias
+
         # First checks if parens are needed around str(self.funciton).
         if isinstance(self.function, Abstraction):
-            s1 = self.function.to_string(var, True)
+            s1 = self.function.to_string(var, True, use_aliases)
         else:
-            s1 = self.function.to_string(var, False)
+            s1 = self.function.to_string(var, False, use_aliases)
 
         # Second, checks if parens are needed around str(self.argument).
-        if isinstance(self.argument, Abstraction) or isinstance(self.argument, Application):
-            s2 = self.argument.to_string(var, True)
+        if (isinstance(self.argument, Abstraction) or
+            isinstance(self.argument, Application)):
+            s2 = self.argument.to_string(var, True, use_aliases)
         else:
-            s2 = self.argument.to_string(var, False)
+            s2 = self.argument.to_string(var, False, use_aliases)
 
         # Finally returns string representation.
         if parens:
@@ -392,14 +417,16 @@ class Lexer():
         pos = 0
         tokens = []
         while pos < len(chars):
-            for exp in self.expressions:
-                regex = re.compile(exp[0])
+            for key, value in self.expressions:
+                regex = re.compile(key)
                 match = regex.match(chars, pos)
                 if match:
                     text = match.group(0) # The matching string
                     pos = match.end(0) # The last index of the match
-                    if exp[1]:
+                    if value == True:
                         tokens.append(text)
+                    elif value != False:
+                        tokens.append(value)
                     break
             else:
                 return False, "ERROR: forbidden character '%s' found!" % (chars[pos])
@@ -539,7 +566,7 @@ class Parser():
         any number."""
         regex = re.compile(r"x[0-9]+$")
         for token in tokens:
-            if regex.match(token):
+            if isinstance(token, str) and regex.match(token):
                 return False, "ERROR: forbidden variable '%s' found!" % (token)
 
         return True, ""
@@ -567,14 +594,38 @@ LAZY = 2
 RED = "\033[1;31;47m" # Colours text red with black background
 LAMBDA = "\u03BB"
 
+x0 = Variable(pos=0)
+x1 = Variable(pos=1)
+x2 = Variable(pos=2)
+x3 = Variable(pos=3)
+x4 = Variable(pos=4)
+x5 = Variable(pos=5)
+
+# Booleans
+ID = Abstraction(x0)
+TRUE = Abstraction(Abstraction(x1))
+FALSE = Abstraction(Abstraction(x0))
+NOT = Abstraction(Application(Application(x0, FALSE), TRUE))
+OR = Abstraction(Abstraction(Application(Application(x1, TRUE), x0)))
+AND = Abstraction(Abstraction(Application(Application(x1, x0), FALSE)))
+XOR = Abstraction(Abstraction(Application(Application(x1, Application(NOT, x0)), x0)))
+EQ = Abstraction(Abstraction(Application(Application(x1, x0), Application(NOT, x0))))
+
+# Integers
+ZERO = Abstraction(Abstraction(x0))
+SUCC = Abstraction(Abstraction(Abstraction(Application(x1, Application(Application(x2, x1), x0)))))
+
+aliases = [("True", TRUE), ("False", FALSE), ("not", NOT), ("or", OR),
+           ("and", AND), ("xor",  XOR), ("equals", EQ), ("id", ID)]
+
 # Lambda calculus token expressions
 LAMBDA_EXPS = [
         (r"[ \n\t]+", False),
         (r"\\", True),
         (r"\.", True),
         (r"\(", True),
-        (r"\)", True),
-        (r"[A-Za-z]+[A-Za-z0-9]*", True)]
+        (r"\)", True)]
+LAMBDA_EXPS.extend(aliases + [(r"[A-Za-z]+[A-Za-z0-9]*", True)])
 
 LAMBDA_LEXER = Lexer(LAMBDA_EXPS)
 
@@ -583,40 +634,15 @@ LAMBDA_LEXER = Lexer(LAMBDA_EXPS)
 # =============================================================================
 
 if __name__ == "__main__":
-    x0 = Variable(pos=0)
-    x1 = Variable(pos=1)
-    x2 = Variable(pos=2)
-    x3 = Variable(pos=3)
-    x4 = Variable(pos=4)
-    x5 = Variable(pos=5)
-
-    # Booleans
-    ID = Abstraction(x0)
-    TRUE = Abstraction(Abstraction(x1))
-    FALSE = Abstraction(Abstraction(x0))
-    NOT = Abstraction(Application(Application(x0, FALSE), TRUE))
-    OR = Abstraction(Abstraction(Application(Application(x1, TRUE), x0)))
-    AND = Abstraction(Abstraction(Application(Application(x1, x0), FALSE)))
-    XOR = Abstraction(Abstraction(Application(Application(x1, Application(NOT, x0)), x0)))
-    EQ = Abstraction(Abstraction(Application(Application(x1, x0), Application(NOT, x0))))
-
     XOR2 = Abstraction(Abstraction(Application(Application(AND, Application(Application(OR, x0), x1)), Application(NOT, Application(Application(AND, x1), x0)))))
 
-    # Integers
-    ZERO = Abstraction(Abstraction(x0))
-    SUCC = Abstraction(Abstraction(Abstraction(Application(x1, Application(Application(x2, x1), x0)))))
-
-    flag, test = from_string(r"(\x.x x) ((\x.x)y)")
-    count = 0
+    flag, test = from_string(r"id xor")
 
     if flag:
         tag = True
         while tag:
-            print(test)
+            print(test.to_string())
             tag, test = test.beta_reduce(NORMAL)
-            count += 1
     else:
         print("Something went wrong!")
         print(test)
-
-    print(count)
