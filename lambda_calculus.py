@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import re
 
+# TODO: implement normal, applicative and lazy order reduciton.
 
 class LambdaTerm:
     """Abstract Base Class for lambda terms."""
@@ -36,9 +37,23 @@ class LambdaTerm:
         """Replaces certain variables with the lambda term 'substitute'."""
         raise NotImplementedError
 
-    def beta_reduce(self):
+    def beta_reduce(self, type=2):
         """Returns next reduced form. None is returned in case no further
         reduction is possible."""
+        if type == NORMAL:
+            return self.normal_reduce()
+        if type == APPLICATIVE:
+            return self.applicative_reduce()
+
+        return self.lazy_reduce()
+
+    def normal_reduce(self):
+        raise NotImplementedError
+
+    def applicative_reduce(self):
+        raise NotImplementedError
+
+    def lazy_reduce(self):
         raise NotImplementedError
 
     def to_string(self, var=[], parens=False):
@@ -62,8 +77,14 @@ class EmptyTerm(LambdaTerm):
     def substitute(self, substitute, depth=0):
         return self
 
-    def beta_reduce(self):
-        return None
+    def normal_reduce(self):
+        return (False, self)
+
+    def applicative_reduce(self):
+        return (False, self)
+
+    def lazy_reduce(self):
+        return (False, self)
 
     def to_string(self, var=[], parens=False):
         return ""
@@ -120,8 +141,14 @@ class Variable(LambdaTerm):
 
         return self
 
-    def beta_reduce(self):
-        return None # Variables can no longer be beta reduced.
+    def normal_reduce(self):
+        return (False, self) # Variables can no longer be beta reduced.
+
+    def applicative_reduce(self):
+        return (False, self) # Variables can no longer be beta reduced.
+
+    def lazy_reduce(self):
+        return (False, self) # Variables can no longer be beta reduced.
 
     def to_string(self, var=[], parens=False):
         """Returns string representation of a variable."""
@@ -168,14 +195,35 @@ class Abstraction(LambdaTerm):
 
         return Abstraction(new_body)
 
-    def beta_reduce(self):
-        """Returns next reduced form. In case no further reduction is possible,
-        returns None."""
-        new_body = self.body.beta_reduce()
-        if new_body != None:
-            return Abstraction(new_body)
+    def normal_reduce(self):
+        """Applies beta reduction. Returns true or false depending if
+        changes were made."""
+        success, new_body = self.body.normal_reduce()
+        if success:
+            self.body = new_body
+            return (True, self)
 
-        return None
+        return (False, self)
+
+    def applicative_reduce(self):
+        """Applies beta reduction. Returns true or false depending if
+        changes were made."""
+        success, new_body = self.body.applicative_reduce()
+        if success:
+            self.body = new_body
+            return (True, self)
+
+        return (False, self)
+
+    def lazy_reduce(self):
+        """Applies beta reduction. Returns true or false depending if
+        changes were made."""
+        success, new_body = self.body.lazy_reduce()
+        if success:
+            self.body = new_body
+            return (True, self)
+
+        return (False, self)
 
     def to_string(self, var=[], parens=False, curried=False):
         """Returns string representation of lambda abstraction.
@@ -237,27 +285,77 @@ class Application(LambdaTerm):
 
         return Application(new_function, new_argument)
 
-    def beta_reduce(self):
-        """Returns next reduced form. Returns None in case no further reduction
-        is possible."""
-        # First try reducing the argument
-        if (isinstance(self.argument, Application)
-            or isinstance(self.argument, Abstraction)):
-            reduction = self.argument.beta_reduce()
-            if reduction != None:
-                return Application(self.function, reduction)
+    def normal_reduce(self):
+        """Applies normal order reduction. Returns true or false depending if
+        changes were made."""
+        # First try applying function to argument
+        if isinstance(self.function, Abstraction):
+            return (True, self.function(self.argument))
 
         # Second try reducing the function
         if isinstance(self.function, Application):
-            reduction = self.function.beta_reduce()
-            if reduction != None:
-                return Application(reduction, self.argument)
+            success, reduction = self.function.lazy_reduce()
+            if success:
+                self.function = reduction
+                return (True, self)
+
+        # Third try reducing the function
+        if (isinstance(self.argument, Application)
+            or isinstance(self.argument, Abstraction)):
+            success, reduction = self.argument.lazy_reduce()
+            if success:
+                self.argument = reduction
+                return (True, self)
+
+        return (False, self)
+
+    def applicative_reduce(self):
+        """Applies applicative order reduction. Returns true or false depending if
+        changes were made."""
+        # First try reducing the function
+        if isinstance(self.function, Application):
+            success, reduction = self.function.applicative_reduce()
+            if success:
+                return (True, Application(reduction, self.argument))
+
+        # Second try reducing the argument
+        if (isinstance(self.argument, Application)
+            or isinstance(self.argument, Abstraction)):
+            success, reduction = self.argument.applicative_reduce()
+            if success:
+                self.argument = reduction
+                return (True, self)
 
         # Third try applying function to argument
         if isinstance(self.function, Abstraction):
-            return self.function(self.argument)
+            return (True, self.function(self.argument))
 
-        return None
+        return (False, self)
+
+    def lazy_reduce(self):
+        """Applies lazy order reduction. Returns true or false depending if
+        changes were made. Currently, lazy order reduction works exactly
+        the same as normal order."""
+        # First try applying function to argument
+        if isinstance(self.function, Abstraction):
+            return (True, self.function(self.argument))
+
+        # Second try reducing the function
+        if isinstance(self.function, Application):
+            success, reduction = self.function.lazy_reduce()
+            if success:
+                self.function = reduction
+                return (True, self)
+
+        # Third try reducing the function
+        if (isinstance(self.argument, Application)
+            or isinstance(self.argument, Abstraction)):
+            success, reduction = self.argument.lazy_reduce()
+            if success:
+                self.argument = reduction
+                return (True, self)
+
+        return (False, self)
 
     def to_string(self, var=[], parens=False):
         """Returns string representation of lambda term."""
@@ -463,6 +561,9 @@ def from_string(string):
 
 # Some constants
 EMPTY_TERM = EmptyTerm()
+NORMAL = 0
+APPLICATIVE = 1
+LAZY = 2
 RED = "\033[1;31;47m" # Colours text red with black background
 LAMBDA = "\u03BB"
 
@@ -505,14 +606,17 @@ if __name__ == "__main__":
     ZERO = Abstraction(Abstraction(x0))
     SUCC = Abstraction(Abstraction(Abstraction(Application(x1, Application(Application(x2, x1), x0)))))
 
-    test = EQ + TRUE + FALSE
-    flag = True
+    flag, test = from_string(r"(\x.x x) ((\x.x)y)")
+    count = 0
 
     if flag:
-        last = test
-        while test != None:
+        tag = True
+        while tag:
             print(test)
-            test = test.beta_reduce()
+            tag, test = test.beta_reduce(NORMAL)
+            count += 1
     else:
         print("Something went wrong!")
         print(test)
+
+    print(count)
