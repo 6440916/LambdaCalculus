@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-import re
-import sys
 """
 Lambda Calculus Interpreter by Ruben de Vries (6440916).
 """
+import re
+import sys
 
-"""TODO:
+"""
+TODO:
     1. Finish lazy order reduction.
     2. Clean up code
     3. Optimize code
@@ -16,6 +17,7 @@ class LambdaTerm:
     """Abstract Base Class for lambda terms."""
 
     def __add__(self, other):
+        """Creates lambda term of the form M N, with self = M en other = N."""
         if not isinstance(other, LambdaTerm):
             raise ValueError("Expected lambda term!")
         if self.is_empty():
@@ -32,7 +34,7 @@ class LambdaTerm:
         return self.to_string()
 
     def __repr__(self):
-        raise NotImplementedError
+        return "LambdaTerm"
 
     def is_empty(self):
         return False
@@ -40,11 +42,13 @@ class LambdaTerm:
     def get_alias(self):
         """Returns corresponding alias to lambda term. If none exists, return
         None."""
-        for key, value in aliases:
+        for key, value in ALIASES:
             if self == value:
                 return key
 
     def deep_add(self, other, depth):
+        """Can append lambda terms insides abstraction's body. Depth determines
+        how many abstraction bodies deep other has to be appended."""
         if not isinstance(other, LambdaTerm):
             raise ValueError("Expected lambda term!")
         if self.is_empty():
@@ -54,11 +58,12 @@ class LambdaTerm:
 
     def substitute(self, substitute, depth=0):
         """Replaces certain variables with the lambda term 'substitute'."""
-        raise NotImplementedError
+        return self
 
     def beta_reduce(self, type=2):
-        """Returns next reduced form. None is returned in case no further
-        reduction is possible."""
+        """Returns boolean and next reduced form. Boolean returned is True if
+        lambda term could be reduced further, else False.Type determines in
+        which order to reduce lambda terms."""
         if type == NORMAL:
             return self.normal_reduce()
         if type == APPLICATIVE:
@@ -67,30 +72,35 @@ class LambdaTerm:
         return self.lazy_reduce()
 
     def normal_reduce(self):
-        raise NotImplementedError
+        """Leftmost, outermost lambda terms are reduced first."""
+        raise (False, self)
 
     def applicative_reduce(self):
-        raise NotImplementedError
+        """Innermost lambda terms are reduced first."""
+        raise (False, self)
 
     def lazy_reduce(self):
-        raise NotImplementedError
+        """Leftmost, outermost lambda terms are reduced first but equal lambda
+        terms are reduced at the same time."""
+        raise (False, self)
 
     def to_string(self, var=[], parens=False, use_aliases=True):
         """Returns string representation of lambda term. Var is list of
-        variable names to use and parens determines whether or not to return
-        string with parens."""
-        raise NotImplementedError
+        variable names to use and parens determines whether or not to put
+        parentheses around lambda term. Use_aliases determines whether to use
+        aliases."""
+        return "LambdaTerm"
 
 
 class EmptyTerm(LambdaTerm):
-    """Represents an empty lambda term. Mainly used in creating lambda terms
-    from string."""
+    """Represents an empty lambda term. Mainly used in forming lambda terms
+    from strings."""
 
     def __eq__(self, other):
         return other.is_empty()
 
     def __repr__(self):
-        return "Empty"
+        return "EmptyTerm"
 
     def is_empty(self):
         return True
@@ -116,12 +126,12 @@ class Variable(LambdaTerm):
 
     Attributes:
         bound : true if bound, false if free variable.
-        symbol : string value for free variable.
+        symbol : string value for free variables.
         pos : represents the distance of the variable to the
             corresponding function.
     """
 
-    def __init__(self, symbol = "", pos = -1):
+    def __init__(self, symbol="", pos=-1):
         # Check for correct arguments.
         if not (isinstance(symbol, str) and isinstance(pos, int)):
             raise ValueError("Expected string and integer as arguments.")
@@ -148,17 +158,16 @@ class Variable(LambdaTerm):
         return (isinstance(other, Variable) and self.symbol == other.symbol
                 and self.pos == other.pos)
 
-    def substitute(self, substitute, depth = 0):
+    def substitute(self, substitute, depth=0):
         """Replaces self with substitute in case depth == pos.
         Also updates pos since substition comes with beta reduction and
         beta reduction means an abstraction has dissappeared."""
-
         if self.pos == depth:
             if isinstance(substitute, Variable) and substitute.bound:
-                return Variable(pos = substitute.pos + depth)
+                return Variable(pos=substitute.pos + depth)
             return substitute
         elif self.pos > depth:
-            return Variable(pos = self.pos - 1)
+            return Variable(pos=self.pos - 1)
 
         return self
 
@@ -194,17 +203,18 @@ class Abstraction(LambdaTerm):
         self.body = body
 
     def __eq__(self, other):
-        return (isinstance(other, Abstraction) and self.body == other.body)
+        return isinstance(other, Abstraction) and self.body == other.body
 
     def __repr__(self):
         return "Abstraction(%s)" % repr((self.body))
 
     def __call__(self, argument):
+        """Applies the abstraction self to argument."""
         return self.body.substitute(argument)
 
     def deep_add(self, other, depth):
-        """Instead of adding other to self, adds other to self's body. So,
-        λx.x + λy.y becomes λx.x λy.y instead of (λx.x)(λy.y)."""
+        """Can append lambda terms insides abstraction's body. Depth determines
+        how many abstraction bodies deep other has to be appended."""
         if self.body.is_empty():
             return Abstraction(other)
         if depth > 0:
@@ -220,8 +230,8 @@ class Abstraction(LambdaTerm):
         return Abstraction(new_body)
 
     def normal_reduce(self):
-        """Applies beta reduction. Returns true or false depending if
-        changes were made."""
+        """Applies normal order beta reduction. Returns true or false depending
+        if changes were made."""
         success, new_body = self.body.normal_reduce()
         if success:
             self.body = new_body
@@ -230,8 +240,8 @@ class Abstraction(LambdaTerm):
         return (False, self)
 
     def applicative_reduce(self):
-        """Applies beta reduction. Returns true or false depending if
-        changes were made."""
+        """Applies applicative order beta reduction. Returns true or false
+        depending if changes were made."""
         success, new_body = self.body.applicative_reduce()
         if success:
             self.body = new_body
@@ -240,8 +250,8 @@ class Abstraction(LambdaTerm):
         return (False, self)
 
     def lazy_reduce(self):
-        """Applies beta reduction. Returns true or false depending if
-        changes were made."""
+        """Applies lazy order beta reduction. Returns true or false depending
+        if changes were made."""
         success, new_body = self.body.lazy_reduce()
         if success:
             self.body = new_body
@@ -252,9 +262,10 @@ class Abstraction(LambdaTerm):
     def to_string(self, var=[], parens=False, use_aliases=True, curried=False):
         """Returns string representation of lambda abstraction.
         E.g.: λ x0 x1.x0 """
-        alias = self.get_alias()
-        if alias:
-            return alias
+        if use_aliases: # Print alias instead of lambda term if enabled
+            alias = self.get_alias()
+            if alias:
+                return alias
 
         symbol = ("x%d") % (len(var)) # Creates new variable name.
         x = Variable(symbol)
@@ -262,8 +273,8 @@ class Abstraction(LambdaTerm):
 
         # Check if body is lambda abstraction.
         if isinstance(self.body, Abstraction):
-            second =  " %s" % (self.body.to_string(var + [x], False,
-                                                   use_aliases, curried=True))
+            second = " %s" % (self.body.to_string(var + [x], False,
+                                                  use_aliases, curried=True))
         else:
             second = ".%s" % (self.body.to_string(var + [x], False, use_aliases))
 
@@ -283,7 +294,7 @@ class Application(LambdaTerm):
 
     def __init__(self, function, argument):
         if not (isinstance(function, LambdaTerm)
-            and isinstance(argument, LambdaTerm)):
+                and isinstance(argument, LambdaTerm)):
             raise ValueError("Expected lambda term.")
 
         self.function = function
@@ -298,6 +309,8 @@ class Application(LambdaTerm):
         return "Application(%s,%s)" % (repr(self.function), repr(self.argument))
 
     def deep_add(self, other, depth):
+        """Can append lambda terms insides abstraction's body. Depth determines
+        how many abstraction bodies deep other has to be appended."""
         if self.function.is_empty():
             return Application(other, self.argument)
         if self.argument.is_empty():
@@ -330,7 +343,7 @@ class Application(LambdaTerm):
 
         # Third try reducing the function
         if (isinstance(self.argument, Application)
-            or isinstance(self.argument, Abstraction)):
+                or isinstance(self.argument, Abstraction)):
             success, reduction = self.argument.lazy_reduce()
             if success:
                 self.argument = reduction
@@ -349,7 +362,7 @@ class Application(LambdaTerm):
 
         # Second try reducing the argument
         if (isinstance(self.argument, Application)
-            or isinstance(self.argument, Abstraction)):
+                or isinstance(self.argument, Abstraction)):
             success, reduction = self.argument.applicative_reduce()
             if success:
                 self.argument = reduction
@@ -378,7 +391,7 @@ class Application(LambdaTerm):
 
         # Third try reducing the function
         if (isinstance(self.argument, Application)
-            or isinstance(self.argument, Abstraction)):
+                or isinstance(self.argument, Abstraction)):
             success, reduction = self.argument.lazy_reduce()
             if success:
                 self.argument = reduction
@@ -388,19 +401,20 @@ class Application(LambdaTerm):
 
     def to_string(self, var=[], parens=False, use_aliases=True):
         """Returns string representation of lambda term."""
-        alias = self.get_alias()
-        if alias:
-            return alias
+        if use_aliases: # Print alias instead of lambda term if enabled
+            alias = self.get_alias()
+            if alias:
+                return alias
 
-        # First checks if parens are needed around str(self.funciton).
+        # First checks if parens are needed around str(self.function).
         if isinstance(self.function, Abstraction):
             s1 = self.function.to_string(var, True, use_aliases)
         else:
             s1 = self.function.to_string(var, False, use_aliases)
 
         # Second, checks if parens are needed around str(self.argument).
-        if (isinstance(self.argument, Abstraction) or
-            isinstance(self.argument, Application)):
+        if (isinstance(self.argument, Abstraction)
+                or isinstance(self.argument, Application)):
             s2 = self.argument.to_string(var, True, use_aliases)
         else:
             s2 = self.argument.to_string(var, False, use_aliases)
@@ -483,9 +497,11 @@ class Parser():
                     elif isinstance(tokens[pos2], LambdaTerm):
                         result = result.deep_add(tokens[pos2], depth)
                     elif isinstance(tokens[pos2], int):
-                        result =result.deep_add(Variable(pos = tokens[pos2]), depth)
+                        result = result.deep_add(Variable(pos=tokens[pos2]),
+                                                             depth)
                     elif tokens[pos2] != "(":
-                        result = result.deep_add(Variable(symbol = tokens[pos2]), depth)
+                        result = result.deep_add(Variable(symbol=tokens[pos2]),
+                                                             depth)
                     pos2 += 1
 
                 # Restart from beginning
@@ -561,7 +577,8 @@ class Parser():
                 parens -= 1
 
             if parens < 0:
-                return False, "ERROR: closing parenthesis with no opening found!"
+                return False, "ERROR: closing parenthesis with no opening \
+                                found!"
 
         if parens == 0:
             return True, ""
@@ -603,29 +620,31 @@ LAZY = 2
 RED = "\033[1;31;47m" # Colours text red with black background
 LAMBDA = "\u03BB"
 
-x0 = Variable(pos=0)
-x1 = Variable(pos=1)
-x2 = Variable(pos=2)
-x3 = Variable(pos=3)
-x4 = Variable(pos=4)
-x5 = Variable(pos=5)
+X0 = Variable(pos=0)
+X1 = Variable(pos=1)
+X2 = Variable(pos=2)
+X3 = Variable(pos=3)
+X4 = Variable(pos=4)
+X5 = Variable(pos=5)
 
 # Booleans
-ID = Abstraction(x0)
-TRUE = Abstraction(Abstraction(x1))
-FALSE = Abstraction(Abstraction(x0))
-NOT = Abstraction(Application(Application(x0, FALSE), TRUE))
-OR = Abstraction(Abstraction(Application(Application(x1, TRUE), x0)))
-AND = Abstraction(Abstraction(Application(Application(x1, x0), FALSE)))
-XOR = Abstraction(Abstraction(Application(Application(x1, Application(NOT, x0)), x0)))
-EQ = Abstraction(Abstraction(Application(Application(x1, x0), Application(NOT, x0))))
+ID = Abstraction(X0)
+TRUE = Abstraction(Abstraction(X1))
+FALSE = Abstraction(Abstraction(X0))
+NOT = Abstraction(Application(Application(X0, FALSE), TRUE))
+OR = Abstraction(Abstraction(Application(Application(X1, TRUE), X0)))
+AND = Abstraction(Abstraction(Application(Application(X1, X0), FALSE)))
+XOR = Abstraction(Abstraction(Application(Application(X1, Application(NOT, X0)), X0)))
+EQ = Abstraction(Abstraction(Application(Application(X1, X0), Application(NOT, X0))))
 
 # Integers
-ZERO = Abstraction(Abstraction(x0))
-SUCC = Abstraction(Abstraction(Abstraction(Application(x1, Application(Application(x2, x1), x0)))))
+ZERO = Abstraction(Abstraction(X0))
+SUCC = Abstraction(Abstraction(Abstraction(Application(X1, Application(Application(X2, X1), X0)))))
+SUM = Abstraction(Abstraction(X1 + SUCC + X0))
 
-aliases = [("True", TRUE), ("False", FALSE), ("not", NOT), ("or", OR),
-           ("and", AND), ("xor",  XOR), ("equals", EQ), ("id", ID)]
+ALIASES = [("True", TRUE), ("False", FALSE), ("not", NOT), ("or", OR),
+           ("and", AND), ("xor",  XOR), ("equals", EQ), ("id", ID), ("0", ZERO),
+           ("succ", SUCC), ("sum", SUM)]
 
 # Lambda calculus token expressions
 LAMBDA_EXPS = [
@@ -634,7 +653,7 @@ LAMBDA_EXPS = [
         (r"\.", True),
         (r"\(", True),
         (r"\)", True)]
-LAMBDA_EXPS.extend(aliases + [(r"[A-Za-z]+[A-Za-z0-9]*", True)])
+LAMBDA_EXPS.extend(ALIASES + [(r"[A-Za-z]+[A-Za-z0-9]*", True)])
 
 LAMBDA_LEXER = Lexer(LAMBDA_EXPS)
 
@@ -646,8 +665,8 @@ if __name__ == "__main__":
     # Beta reduces file if file path is given in arguments
     if len(sys.argv) > 1:
         with open(sys.argv[1]) as file:
-            content = file.read()
-        success, terms = from_string(content)
+            CONTENT = file.read()
+        success, terms = from_string(CONTENT)
         while success:
             success, terms = terms.beta_reduce()
         print(terms)
@@ -700,11 +719,11 @@ if __name__ == "__main__":
 
             # Translating input to lambda term and reducing it to simplest form
             s = s.replace("last", "(" + last + ")")
-            tag, lambda_term = from_string(s)
-            while lambda_term != None:
-                last = str(lambda_term)
+            success, lambda_term = from_string(s)
+            while success:
+                last = lambda_term.to_string(use_aliases=False)
                 print(last)
-                lambda_term = lambda_term.beta_reduce()
+                success, lambda_term = lambda_term.beta_reduce()
 
 
     def command_info():
@@ -727,7 +746,6 @@ if __name__ == "__main__":
             Command("help", "help : reveals all commands and their function.",
                     command_info),
             Command("close", "close : close interpreter.", close)]
-
 
     init()
     run()
