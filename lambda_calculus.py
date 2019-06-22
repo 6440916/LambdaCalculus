@@ -71,18 +71,28 @@ class LambdaTerm:
 
         return self.lazy_reduce()
 
+    def normal_form(self, type=2):
+        """Returns the normal form of this expression. That is, evalutes
+        lambda term as long as possible and returns result. Beware for
+        infinite loops!"""
+        success, next = True, self
+        while success:
+            success, next = next.beta_reduce(type)
+
+        return next
+
     def normal_reduce(self):
         """Leftmost, outermost lambda terms are reduced first."""
-        raise (False, self)
+        return (False, self)
 
     def applicative_reduce(self):
         """Innermost lambda terms are reduced first."""
-        raise (False, self)
+        return (False, self)
 
     def lazy_reduce(self):
         """Leftmost, outermost lambda terms are reduced first but equal lambda
         terms are reduced at the same time."""
-        raise (False, self)
+        retur  (False, self)
 
     def to_string(self, var=[], parens=False, use_aliases=True):
         """Returns string representation of lambda term. Var is list of
@@ -672,7 +682,7 @@ LAMBDA_LEXER = Lexer(LAMBDA_EXPS)
 # =============================================================================
 
 if __name__ == "__main__":
-    # Beta reduces file if file path is given in arguments
+    # Evaluates lambda expressions in file if file path is given in arguments
     if len(sys.argv) > 1:
         with open(sys.argv[1]) as file:
             CONTENT = file.read()
@@ -681,6 +691,8 @@ if __name__ == "__main__":
             success, terms = terms.beta_reduce()
         print(terms)
         sys.exit(0)
+
+    # Else start the interpreter terminal.
 
     class Command():
         """Simple command object. For example, typing 'close' in terminal will
