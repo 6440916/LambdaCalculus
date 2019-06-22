@@ -7,7 +7,7 @@ import sys
 
 """
 TODO:
-    1. Finish lazy order reduction.
+    1. (Save string values to prevent recalculations) (optional)
     2. Clean up code
     3. Optimize code
     4. Add types
@@ -234,8 +234,7 @@ class Abstraction(LambdaTerm):
         if changes were made."""
         success, new_body = self.body.normal_reduce()
         if success:
-            self.body = new_body
-            return (True, self)
+            return (True, Abstraction(new_body))
 
         return (False, self)
 
@@ -244,8 +243,7 @@ class Abstraction(LambdaTerm):
         depending if changes were made."""
         success, new_body = self.body.applicative_reduce()
         if success:
-            self.body = new_body
-            return (True, self)
+            return (True, Abstraction(new_body))
 
         return (False, self)
 
@@ -338,16 +336,14 @@ class Application(LambdaTerm):
         if isinstance(self.function, Application):
             success, reduction = self.function.lazy_reduce()
             if success:
-                self.function = reduction
-                return (True, self)
+                return (True, Application(reduction, self.argument))
 
-        # Third try reducing the function
+        # Third try reducing the argument
         if (isinstance(self.argument, Application)
                 or isinstance(self.argument, Abstraction)):
             success, reduction = self.argument.lazy_reduce()
             if success:
-                self.argument = reduction
-                return (True, self)
+                return (True, Application(self.function, reduction))
 
         return (False, self)
 
@@ -356,17 +352,16 @@ class Application(LambdaTerm):
         changes were made."""
         # First try reducing the function
         if isinstance(self.function, Application):
-            success, reduction = self.function.applicative_reduce()
+            success, reduction = self.function.lazy_reduce()
             if success:
                 return (True, Application(reduction, self.argument))
 
         # Second try reducing the argument
         if (isinstance(self.argument, Application)
                 or isinstance(self.argument, Abstraction)):
-            success, reduction = self.argument.applicative_reduce()
+            success, reduction = self.argument.lazy_reduce()
             if success:
-                self.argument = reduction
-                return (True, self)
+                return (True, Application(self.function, reduction))
 
         # Third try applying function to argument
         if isinstance(self.function, Abstraction):
@@ -380,7 +375,22 @@ class Application(LambdaTerm):
         the same as normal order."""
         # First try applying function to argument
         if isinstance(self.function, Abstraction):
-            return (True, self.function(self.argument))
+            reduction = self.function(self.argument)
+
+            # Replaces self with reduction, despite reduction's class.
+            if isinstance(reduction, Application):
+                self.function = reduction.function
+                self.argument = reduction.argument
+            elif isinstance(reduction, Abstraction):
+                self.__class__ = Abstraction # Changes this object's class
+                self.body = reduction.body
+            elif isinstance(reduction, Variable):
+                self.__class__ = Variable # Changes this object's class
+                self.bound = reduction.bound
+                self.symbol = reduction.symbol
+                self.pos = reduction.pos
+
+            return (True, self)
 
         # Second try reducing the function
         if isinstance(self.function, Application):
@@ -698,7 +708,6 @@ if __name__ == "__main__":
         print("Lambda calculus interpreter by Ruben de Vries(6440916).")
         print("Type 'help' to find out how it works!")
 
-
     def run():
         """Run interpeter."""
         global running, last
@@ -720,10 +729,11 @@ if __name__ == "__main__":
             # Translating input to lambda term and reducing it to simplest form
             s = s.replace("last", "(" + last + ")")
             success, lambda_term = from_string(s)
+
             while success:
                 last = lambda_term.to_string(use_aliases=False)
                 print(last)
-                success, lambda_term = lambda_term.beta_reduce()
+                success, lambda_term = lambda_term.beta_reduce(type=NORMAL)
 
 
     def command_info():
