@@ -73,11 +73,15 @@ class LambdaTerm:
 
     def normal_form(self, type=2):
         """Returns the normal form of this expression. That is, evalutes
-        lambda term as long as possible and returns result. Beware for
-        infinite loops!"""
+        lambda term as long as possible and returns result. In case """
         success, next = True, self
+        amt = 0
+
         while success:
             success, next = next.beta_reduce(type)
+            amt += 1
+            if amt > MAXIMUM_REDUCTION:
+                raise RecursionError("Maximum beta reduction depth exceeded.")
 
         return next
 
@@ -92,7 +96,7 @@ class LambdaTerm:
     def lazy_reduce(self):
         """Leftmost, outermost lambda terms are reduced first but equal lambda
         terms are reduced at the same time."""
-        retur  (False, self)
+        return  (False, self)
 
     def to_string(self, var=[], parens=False, use_aliases=True):
         """Returns string representation of lambda term. Var is list of
@@ -486,7 +490,7 @@ class Parser():
     def __call__(self):
         """If possible, translates self.chars to an abstract lambda term
         structure. Returns True and the structure if succeeded. Else returns
-        False and the error message."""
+        False and a corresponding error message."""
         flag, tokens = LAMBDA_LEXER(self.chars)
         if not flag:
             return False, tokens
@@ -504,6 +508,10 @@ class Parser():
         pos = 0
         parens = 0 # Position of opening parenthesis
         depth = 0 # How many expressions deep the result has to be appended
+
+        # Checks if tokens is a single variable
+        if len(tokens) == 1 and isinstance(tokens[0], str):
+            tokens[0] = Variable(tokens[0])
 
         while len(tokens) > 1:
             if pos == len(tokens) or tokens[pos] == ")":
@@ -537,7 +545,7 @@ class Parser():
 
             pos += 1
 
-        if len(tokens) > 0 :
+        if tokens:
             return tokens[0]
         else:
             return EMPTY_TERM
@@ -550,8 +558,8 @@ class Parser():
         ABSTRACTION = 0
         APPLICATION = 1
         var = [] # Variable names
-        #
-        parens = []
+        parens = [] # List of 0s and 1s. Denotes if parenthesis corresponds
+                    # with abstraction or application.
         pos = 0
         in_argument = False # Is true if token is surrounded by \ en .
 
@@ -588,27 +596,41 @@ class Parser():
     @staticmethod
     def check_parens(tokens):
         """Check if tokens use parenthesis correctly. That is,
-        each opening parenthesis has an associated closing parenthesis."""
+        each opening parenthesis has an associated closing parenthesis and no
+        parentheses are found inside an abstraction's argument."""
         parens = 0 # keeps track of opening and closing parenthesis
+        in_argument = False # True if token is between a '\' and '.'
+
         for token in tokens:
-            if token == '(':
+            if token == "\\":
+                in_argument = True
+            elif token == ".":
+                in_argument = False
+
+            elif token == '(':
+                if in_argument:
+                    return False, "ERROR: parenthesis found inside " + \
+                                    "abstraction's argument!"
                 parens += 1
             elif token == ')':
+                if in_argument:
+                    return False, "ERROR: parenthesis found inside " +  \
+                                    "abstraction's argument!"
                 parens -= 1
 
             if parens < 0:
-                return False, "ERROR: closing parenthesis with no opening \
-                                found!"
+                return False, "ERROR: closing parenthesis with no opening" + \
+                                " one found!"
 
         if parens == 0:
             return True, ""
 
-        return False, "ERROR: not every opening parenthesis has a closing one,\
-                        or vice versa."
+        return False, "ERROR: not every opening parenthesis has a closing" + \
+                        " one, or vice versa."
 
     @staticmethod
     def check_variables(tokens):
-        """Check if tokens has no variables of the form xi where i is
+        """Check if tokens has no forbidden variables of the form xi where i is
         any number."""
         regex = re.compile(r"x[0-9]+$")
         for token in tokens:
@@ -618,11 +640,40 @@ class Parser():
         return True, ""
 
     @staticmethod
+    def check_lambdas(tokens):
+        """Checks if tokens has the right use of lambdas. That is, for every
+        lambda there should exist a corresponding variable(s), dot and body."""
+        variable_counter = 0
+        lambda_counter = 0
+        dot_counter = 0
+
+        for token in tokens:
+            if token == "\\":
+                lambda_counter += 1
+                variable_counter = 0
+            elif token == ".":
+                if variable_counter == 0:
+                    return False, "ERROR: invalid abstraction argument!"
+                dot_counter += 1
+                variable_counter = 0
+            elif token != "(" and token != ")":
+                variable_counter += 1
+
+        if lambda_counter != dot_counter:
+            return False, "ERROR: invalid abstraction found!"
+        if lambda_counter > 0 and variable_counter == 0:
+            return False, "ERROR: invalid abstraction body!"
+
+        return True, ""
+
+    @staticmethod
     def check_syntax(tokens):
         """Checks if self.chars has correct syntax."""
         flag, error = Parser.check_parens(tokens)
         if flag:
             flag, error = Parser.check_variables(tokens)
+        if flag:
+            flag, error = Parser.check_lambdas(tokens)
 
         return flag, error
 
@@ -632,12 +683,13 @@ def from_string(string):
     parser = Parser(string)
     return parser()
 
+
 # Some constants
+MAXIMUM_REDUCTION = 1000 # Max number of times a lambda term can be reduced
 EMPTY_TERM = EmptyTerm()
 NORMAL = 0
 APPLICATIVE = 1
 LAZY = 2
-RED = "\033[1;31;47m" # Colours text red with black background
 LAMBDA = "\u03BB"
 
 X0 = Variable(pos=0)
@@ -662,14 +714,20 @@ ZERO = Abstraction(Abstraction(X0))
 SUCC = Abstraction(Abstraction(Abstraction(Application(X1, Application(Application(X2, X1), X0)))))
 SUM = Abstraction(Abstraction(X1 + SUCC + X0))
 
+# Recursion
+temp = Abstraction(X1 + (X0 + X0))
+Y = Abstraction(temp + temp)
+
 ALIASES = [("True", TRUE), ("False", FALSE), ("not", NOT), ("or", OR),
            ("and", AND), ("xor",  XOR), ("equals", EQ), ("id", ID), ("0", ZERO),
-           ("succ", SUCC), ("sum", SUM)]
+           ("succ", SUCC), ("sum", SUM), ("rec", Y)]
 
 # Lambda calculus token expressions
 LAMBDA_EXPS = [
         (r"[ \n\t]+", False),
         (r"\\", True),
+        (LAMBDA, "\\"),
+        ("lambda", "\\"),
         (r"\.", True),
         (r"\(", True),
         (r"\)", True)]
@@ -687,13 +745,12 @@ if __name__ == "__main__":
         with open(sys.argv[1]) as file:
             CONTENT = file.read()
         success, terms = from_string(CONTENT)
-        while success:
-            success, terms = terms.beta_reduce()
+        if success:
+            terms = terms.normal_form()
         print(terms)
         sys.exit(0)
 
     # Else start the interpreter terminal.
-
     class Command():
         """Simple command object. For example, typing 'close' in terminal will
         close this program.
@@ -720,6 +777,7 @@ if __name__ == "__main__":
         print("Lambda calculus interpreter by Ruben de Vries(6440916).")
         print("Type 'help' to find out how it works!")
 
+
     def run():
         """Run interpeter."""
         global running, last
@@ -729,27 +787,30 @@ if __name__ == "__main__":
             s = input("> ")
 
             # Check if input corresponds with existing command
-            command_input = False
             for command in COMMANDS:
                 if s == command.name:
                     command()
-                    command_input = True
                     break
-            if command_input:
-                continue
+            else:
+                # Translating input to lambda term and reducing it to simplest form
+                success, lambda_term = from_string(s)
+                if not success:
+                    print(lambda_term)
+                amt = 0
 
-            # Translating input to lambda term and reducing it to simplest form
-            s = s.replace("last", "(" + last + ")")
-            success, lambda_term = from_string(s)
+                while success:
+                    last = lambda_term.to_string(use_aliases=True)
+                    print(last)
+                    success, lambda_term = lambda_term.beta_reduce(type=NORMAL)
 
-            while success:
-                last = lambda_term.to_string(use_aliases=False)
-                print(last)
-                success, lambda_term = lambda_term.beta_reduce(type=NORMAL)
+                    amt += 1
+                    if amt > MAXIMUM_REDUCTION:
+                        print("Error: Maximum reduction depth exceeded!")
+                        break
 
 
     def command_info():
-        """Reveal all commands and their function."""
+        """Reveal all commands and their usage."""
         print("")
         for command in COMMANDS:
             print(command.description)
@@ -765,9 +826,9 @@ if __name__ == "__main__":
     last = ""
     running = False
     COMMANDS = [
-            Command("help", "help : reveals all commands and their function.",
+            Command("help", "help : reveals all commands and their usage.",
                     command_info),
-            Command("close", "close : close interpreter.", close)]
+            Command("close", "close : closes interpreter.", close)]
 
     init()
     run()
