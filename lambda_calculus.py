@@ -7,10 +7,9 @@ import sys
 
 """
 TODO:
-    1. (Save string values to prevent recalculations) (optional)
-    2. Clean up code
-    3. Optimize code
-    4. Add types
+    1. Clean up code
+    2. Optimize code
+    3. Add types
 """
 
 class LambdaTerm:
@@ -682,11 +681,11 @@ X5 = Variable(pos=5)
 ID = Abstraction(X0)
 TRUE = Abstraction(Abstraction(X1))
 FALSE = Abstraction(Abstraction(X0))
-NOT = Abstraction(Application(Application(X0, FALSE), TRUE))
-OR = Abstraction(Abstraction(Application(Application(X1, TRUE), X0)))
-AND = Abstraction(Abstraction(Application(Application(X1, X0), FALSE)))
-XOR = Abstraction(Abstraction(Application(Application(X1, Application(NOT, X0)), X0)))
-EQ = Abstraction(Abstraction(Application(Application(X1, X0), Application(NOT, X0))))
+NOT = Abstraction(X0 + FALSE + TRUE)
+OR = Abstraction(Abstraction(X1 + TRUE + X2))
+AND = Abstraction(Abstraction(X1 + X0 + FALSE))
+XOR = Abstraction(Abstraction(X1 + (NOT + X0) + X0))
+EQ = Abstraction(Abstraction((X1 + X0) + (NOT + X0)))
 
 # Integers
 ZERO = Abstraction(Abstraction(X0))
@@ -731,7 +730,7 @@ if __name__ == "__main__":
 
     # Else start the interpreter terminal.
     class Command():
-        """Simple command object. For example, typing 'close' in terminal will
+        """Simple command class. For example, typing 'close' in terminal will
         close this program.
 
         Attributes:
@@ -746,9 +745,9 @@ if __name__ == "__main__":
             self.description = description
             self.function = function
 
-        def __call__(self):
+        def __call__(self, arguments):
             """Executes command."""
-            return self.function()
+            return self.function(arguments)
 
 
     def init():
@@ -767,35 +766,104 @@ if __name__ == "__main__":
 
             # Check if input corresponds with existing command
             for command in COMMANDS:
-                if s == command.name:
-                    command()
+                regex = re.compile(command.name)
+                match = regex.match(s)
+                if match:
+                    command(s[match.end(0):])
                     break
             else:
-                # Translating input to lambda term and reducing it to simplest form
+                # Translating input to lambda term
                 success, lambda_term = from_string(s)
                 if not success:
                     print(lambda_term)
                 amt = 0
 
+                # Reducing lambda term to simplest form
                 while success:
-                    last = lambda_term.to_string(use_aliases=True)
-                    print(last)
-                    success, lambda_term = lambda_term.beta_reduce(type=NORMAL)
+                    last = lambda_term.to_string(use_aliases=use_aliases)
+                    if show_steps:
+                        print(last)
+                    success, lambda_term = lambda_term.beta_reduce(type=
+                                                                   evaluation_order)
 
                     amt += 1
                     if amt > MAXIMUM_REDUCTION:
                         print("Error: Maximum reduction depth exceeded!")
                         break
+                else:
+                    if not show_steps:
+                        print(last)
 
 
-    def command_info():
+    def command_info(arguments):
         """Reveal all commands and their usage."""
-        print("")
-        for command in COMMANDS:
-            print(command.description)
+        arg = "".join(arguments.split())
+        if arg != "":
+            # Describes single command
+            for command in COMMANDS:
+                if arg == command.name:
+                    print(command.description)
+                    break
+            else:
+                print("Sorry, do not know the command '%s'." % (arg))
+        else:
+        # Describes all commands
+            print("")
+            for command in COMMANDS:
+                print(command.description)
 
 
-    def close():
+    def set_aliases(arguments):
+        """"Turns on or off the use of aliases."""
+        global use_aliases
+        arg = "".join(arguments.split())
+
+        if arg == "true" or arg == "True" or arg == "t" or arg == "T":
+            use_aliases = True
+            print("Alias use set to true.")
+        elif arg == "false" or arg == "False" or arg == "f" or arg == "F":
+            use_aliases = False
+            print("Alias use set to false.")
+        else:
+            print("Argument '%s' is not a boolean value." % (arg))
+
+
+    def set_evaluation(arguments):
+        """Changes evaluation order to normal, applicative or lazy."""
+        global evaluation_order
+        arg = "".join(arguments.split())
+
+        if arg == "normal" or arg == "Normal" or arg == "n" or arg == "N":
+            evaluation_order = NORMAL
+            print("Evaluation order set to normal.")
+        elif (arg == "applicative" or arg == "Applicative" or arg == "a" or
+                arg == "A"):
+            evaluation_order = APPLICATIVE
+            print("Evaluation order set to applicative.")
+        elif (arg == "lazy" or arg == "Lazy" or arg == "l" or arg == "L"):
+            evaluation_order = LAZY
+            print("Evaluation order set to lazy.")
+        else:
+            print("Could not identify '%s' as an evaluation order" % (arg))
+
+
+    def set_steps(arguments):
+        """Determines whether all steps of evaluation are shown or only the
+        result."""
+        global show_steps
+        arg = "".join(arguments.split())
+
+        if arg == "true" or arg == "True" or arg == "t" or arg == "T":
+            show_steps = True
+            print("Evaluation steps will now be shown.")
+        elif arg == "false" or arg == "False" or arg == "f" or arg == "F":
+            show_steps = False
+            print("Evaluation steps will no longer be shown.")
+        else:
+            print("Argument '%s' is not a boolean value." % (arg))
+
+
+    def close(arguments):
         """Closes interpreter."""
         print("\nClosing program ...")
         global running
@@ -803,11 +871,20 @@ if __name__ == "__main__":
 
 
     last = ""
+    evaluation_order = LAZY
+    use_aliases = True
+    show_steps = True
     running = False
     COMMANDS = [
             Command("help", "help : reveals all commands and their usage.",
                     command_info),
-            Command("close", "close : closes interpreter.", close)]
+            Command("close", "close : closes interpreter.", close),
+            Command("order", "order : set evaluation order to normal, " + \
+                    "applicative or lazy.", set_evaluation),
+            Command("alias", "alias : turns the use of aliases on or off",
+                    set_aliases),
+            Command("steps", "steps : turns on or off the showing of " + \
+                    "evaluation steps.", set_steps)]
 
     init()
     run()
