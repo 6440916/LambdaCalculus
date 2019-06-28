@@ -27,9 +27,6 @@ class LambdaTerm:
 
         return Application(self, other)
 
-    def __eq__(self, other):
-        return isinstance(other, LambdaTerm)
-
     def __str__(self):
         return self.to_string()
 
@@ -122,15 +119,6 @@ class EmptyTerm(LambdaTerm):
     def substitute(self, substitute, depth=0):
         return self
 
-    def normal_reduce(self):
-        return (False, self)
-
-    def applicative_reduce(self):
-        return (False, self)
-
-    def lazy_reduce(self):
-        return (False, self)
-
     def to_string(self, var=[], parens=False, use_aliases=True):
         return ""
 
@@ -184,15 +172,6 @@ class Variable(LambdaTerm):
             return Variable(pos=self.pos - 1)
 
         return self
-
-    def normal_reduce(self):
-        return (False, self) # Variables can no longer be beta reduced.
-
-    def applicative_reduce(self):
-        return (False, self) # Variables can no longer be beta reduced.
-
-    def lazy_reduce(self):
-        return (False, self) # Variables can no longer be beta reduced.
 
     def to_string(self, var=[], parens=False, use_aliases=True):
         """Returns string representation of a variable."""
@@ -348,14 +327,14 @@ class Application(LambdaTerm):
 
         # Second try reducing the function
         if isinstance(self.function, Application):
-            success, reduction = self.function.lazy_reduce()
+            success, reduction = self.function.normal_reduce()
             if success:
                 return (True, Application(reduction, self.argument))
 
         # Third try reducing the argument
         if (isinstance(self.argument, Application)
                 or isinstance(self.argument, Abstraction)):
-            success, reduction = self.argument.lazy_reduce()
+            success, reduction = self.argument.normal_reduce()
             if success:
                 return (True, Application(self.function, reduction))
 
@@ -366,14 +345,14 @@ class Application(LambdaTerm):
         changes were made."""
         # First try reducing the function
         if isinstance(self.function, Application):
-            success, reduction = self.function.lazy_reduce()
+            success, reduction = self.function.applicative_reduce()
             if success:
                 return (True, Application(reduction, self.argument))
 
         # Second try reducing the argument
         if (isinstance(self.argument, Application)
                 or isinstance(self.argument, Abstraction)):
-            success, reduction = self.argument.lazy_reduce()
+            success, reduction = self.argument.applicative_reduce()
             if success:
                 return (True, Application(self.function, reduction))
 
