@@ -5,12 +5,6 @@ Lambda Calculus Interpreter by Ruben de Vries (6440916).
 import re
 import sys
 
-"""
-TODO:
-    1. Clean up code
-    2. Optimize code
-    3. Add types
-"""
 
 class LambdaTerm:
     """Abstract Base Class for lambda terms."""
@@ -132,22 +126,19 @@ class Variable(LambdaTerm):
             corresponding function.
     """
 
-    def __init__(self, symbol="", pos=-1):
+    def __init__(self, var):
         # Check for correct arguments.
-        if not (isinstance(symbol, str) and isinstance(pos, int)):
-            raise ValueError("Expected string and integer as arguments.")
-        if symbol != "" and pos > -1:
-            raise ValueError("Expected either empty symbol or negative pos.")
-        if symbol != "":
-            bound = False
-        elif pos > -1:
-            bound = True
-        else:
-            raise ValueError("Invalid symbol and pos.")
+        self.symbol = ""
+        self.pos = -1
 
-        self.bound = bound
-        self.symbol = symbol
-        self.pos = pos
+        if isinstance(var, int) and var >= 0:
+            self.pos = var
+            self.bound = True
+        elif isinstance(var, str) and var != "":
+            self.symbol = var
+            self.bound = False
+        else:
+            raise ValueError("Invalid symbol or position argument.")
 
     def __repr__(self):
         if self.symbol == "":
@@ -165,10 +156,10 @@ class Variable(LambdaTerm):
         beta reduction means an abstraction has dissappeared."""
         if self.pos == depth:
             if isinstance(substitute, Variable) and substitute.bound:
-                return Variable(pos=substitute.pos + depth)
+                return Variable(substitute.pos + depth)
             return substitute
         elif self.pos > depth:
-            return Variable(pos=self.pos - 1)
+            return Variable(self.pos - 1)
 
         return self
 
@@ -340,8 +331,8 @@ class Application(LambdaTerm):
         return (False, self)
 
     def applicative_reduce(self):
-        """Applies applicative order reduction. Returns true or false depending if
-        changes were made."""
+        """Applies applicative order reduction. Returns true or false depending
+        if changes were made."""
         # First try reducing the function
         if isinstance(self.function, Application):
             success, reduction = self.function.applicative_reduce()
@@ -363,8 +354,7 @@ class Application(LambdaTerm):
 
     def lazy_reduce(self):
         """Applies lazy order reduction. Returns true or false depending if
-        changes were made. Currently, lazy order reduction works exactly
-        the same as normal order."""
+        changes were made."""
         # First try applying function to argument
         if isinstance(self.function, Abstraction):
             reduction = self.function(self.argument)
@@ -482,7 +472,8 @@ class Parser():
 
     @staticmethod
     def get_term_structure(tokens):
-        # Create lambda term structure from tokens
+        """Creates a LambdaTerm object representing the lambda term given by
+        the list tokens."""
         pos = 0
         parens = 0 # Position of opening parenthesis
         depth = 0 # How many expressions deep the result has to be appended
@@ -498,15 +489,16 @@ class Parser():
 
                 while pos2 < pos:
                     if tokens[pos2] == "\\":
-                        result = result.deep_add(Abstraction(EMPTY_TERM), depth)
+                        result = result.deep_add(Abstraction(EMPTY_TERM),
+                                                                 depth)
                         depth += 1
                     elif isinstance(tokens[pos2], LambdaTerm):
                         result = result.deep_add(tokens[pos2], depth)
                     elif isinstance(tokens[pos2], int):
-                        result = result.deep_add(Variable(pos=tokens[pos2]),
+                        result = result.deep_add(Variable(tokens[pos2]),
                                                              depth)
                     elif tokens[pos2] != "(":
-                        result = result.deep_add(Variable(symbol=tokens[pos2]),
+                        result = result.deep_add(Variable(tokens[pos2]),
                                                              depth)
                     pos2 += 1
 
@@ -532,7 +524,6 @@ class Parser():
     def format_tokens(tokens):
         """Formats tokens such that all variables are replaced with integers
         corresponding to the abstraction they are linked with."""
-
         ABSTRACTION = 0
         APPLICATION = 1
         var = [] # Variable names
@@ -573,7 +564,7 @@ class Parser():
 
     @staticmethod
     def check_parens(tokens):
-        """Check if tokens use parenthesis correctly. That is,
+        """Check if tokens use parentheses correctly. That is,
         each opening parenthesis has an associated closing parenthesis and no
         parentheses are found inside an abstraction's argument."""
         parens = 0 # keeps track of opening and closing parenthesis
@@ -670,35 +661,26 @@ APPLICATIVE = 1
 LAZY = 2
 LAMBDA = "\u03BB"
 
-X0 = Variable(pos=0)
-X1 = Variable(pos=1)
-X2 = Variable(pos=2)
-X3 = Variable(pos=3)
-X4 = Variable(pos=4)
-X5 = Variable(pos=5)
+# Bound variables
+X0 = Variable(0)
+X1 = Variable(1)
+X2 = Variable(2)
+X3 = Variable(3)
+X4 = Variable(4)
+X5 = Variable(5)
 
 # Booleans
 ID = Abstraction(X0)
 TRUE = Abstraction(Abstraction(X1))
 FALSE = Abstraction(Abstraction(X0))
 NOT = Abstraction(X0 + FALSE + TRUE)
-OR = Abstraction(Abstraction(X1 + TRUE + X2))
+OR = Abstraction(Abstraction(X1 + TRUE + X0))
 AND = Abstraction(Abstraction(X1 + X0 + FALSE))
-XOR = Abstraction(Abstraction(X1 + (NOT + X0) + X0))
-EQ = Abstraction(Abstraction((X1 + X0) + (NOT + X0)))
-
-# Integers
-ZERO = Abstraction(Abstraction(X0))
-SUCC = Abstraction(Abstraction(Abstraction(Application(X1, Application(Application(X2, X1), X0)))))
-SUM = Abstraction(Abstraction(X1 + SUCC + X0))
-
-# Recursion
-temp = Abstraction(X1 + (X0 + X0))
-Y = Abstraction(temp + temp)
+XOR = Abstraction(Abstraction(X1 + (X0 + FALSE + TRUE) + X0))
+EQ = Abstraction(Abstraction((X1 + X0) + (X0 + FALSE + TRUE)))
 
 ALIASES = [("True", TRUE), ("False", FALSE), ("not", NOT), ("or", OR),
-           ("and", AND), ("xor",  XOR), ("equals", EQ), ("id", ID), ("0", ZERO),
-           ("succ", SUCC), ("sum", SUM), ("rec", Y)]
+           ("and", AND), ("xor",  XOR), ("equals", EQ), ("id", ID)]
 
 # Lambda calculus token expressions
 LAMBDA_EXPS = [
@@ -735,8 +717,8 @@ if __name__ == "__main__":
 
         Attributes:
             name : the actual name the command is called by.
-            description : a description of the command which shows up when using
-                the 'help' command.
+            description : a description of the command which shows up when
+                using the 'help' command.
             function : the function called when the command is executed.
         """
 
@@ -753,7 +735,10 @@ if __name__ == "__main__":
     def init():
         """Initialize interpreter."""
         print("Lambda calculus interpreter by Ruben de Vries(6440916).")
-        print("Type 'help' to find out how it works!")
+        print("Enter your favourite lambda expression to evaluate it.")
+        print("'%s', '\\' and '%s' are all recognised as lambda symbols." % \
+              (LAMBDA, "lambda"))
+        print("Type 'help' to get an overview of different commands available.")
 
 
     def run():
@@ -776,15 +761,14 @@ if __name__ == "__main__":
                 success, lambda_term = from_string(s)
                 if not success:
                     print(lambda_term)
-                amt = 0
+                amt = 0 # Amount of beta reductions
 
                 # Reducing lambda term to simplest form
                 while success:
                     last = lambda_term.to_string(use_aliases=use_aliases)
                     if show_steps:
                         print(last)
-                    success, lambda_term = lambda_term.beta_reduce(type=
-                                                                   evaluation_order)
+                    success, lambda_term = lambda_term.beta_reduce(evaluation_order)
 
                     amt += 1
                     if amt > MAXIMUM_REDUCTION:
@@ -886,5 +870,6 @@ if __name__ == "__main__":
             Command("steps", "steps : turns on or off the showing of " + \
                     "evaluation steps.", set_steps)]
 
+    # Start de interpreter
     init()
     run()
